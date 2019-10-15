@@ -7,18 +7,47 @@
 # HEADER
 #================================================================
 
-public_keys_match() {
+extract_public_key() {
+  local 
+}
 
+get_thumbprint() {
+  local thumbprint
+  local assembly_ext="${@##*.}"
+  if [[ $assembly_ext == "snk" ]]; then
+    thumbprint=
+  else
+    thumbprint=$(sn -q -T "$1" | head -n1)
+  fi
+  echo "${thumbprint:18}"
+}
+
+get_public_key() {
+  local public_key=$(sn -q -Tp "$1" | head -n6 | tail -n5 |  awk '{print}' ORS='')
+  echo "$public_key"
+}
+
+public_snks_match() {
+  echo "" 
+}
+
+public_keys_match() {
+  local first_snk_public_key=$(get_public_key $1)
+  local 
 }
 
 thumbprints_match() {
-
+  local first_snk_thumbprint=$(get_thumbprint $1)
+  local second_snk_thumbprint=$(get_thumbprint $2)
+  if [[ $first_snk_thumbprint == $second_snk_thumbprint ]]; then
+    true
+  else
+    false
+  fi
 }
 
-
-
 valid_snks_are_compatable() {
-
+  echo ""
 }
 
 
