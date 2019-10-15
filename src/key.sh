@@ -7,15 +7,11 @@
 # HEADER
 #================================================================
 
-extract_public_key() {
-  local 
-}
-
 get_thumbprint() {
   local thumbprint
-  local assembly_ext="${@##*.}"
+  local assembly_ext="${1##*.}"
   if [[ $assembly_ext == "snk" ]]; then
-    thumbprint=
+    thumbprint=$(sn -q -t "$1" | head -n1)
   else
     thumbprint=$(sn -q -T "$1" | head -n1)
   fi
@@ -23,22 +19,75 @@ get_thumbprint() {
 }
 
 get_public_key() {
-  local public_key=$(sn -q -Tp "$1" | head -n6 | tail -n5 |  awk '{print}' ORS='')
+  local public_key=
+  local assembly_ext="${1##*.}"
+  if [[ $assembly_ext == "snk" ]]; then
+    public_key=$(sn -q -tp "$1" | head -n6 | tail -n5 |  awk '{print}' ORS='')
+  else
+    public_key=$(sn -q -Tp "$1" | head -n6 | tail -n5 |  awk '{print}' ORS='')
+  fi
   echo "$public_key"
 }
 
-public_snks_match() {
-  echo "" 
+get_file_checksum() {
+  shasum $1 | cut -d ' ' -f1
+}
+
+save_public_key_to_snk() {
+  local assembly=$(basename "${1}")
+  local assembly_name="${assembly%.*}"
+  local assembly_ext="${1##*.}"
+  if [[ $assembly_ext == "snk" ]]; then
+    sn -q -p $1 "$2/$assembly_name.snk"
+  else
+    sn -q -e $1 "$2/$assembly_name.snk"
+  fi
+}
+
+public_snk_file_checksums_match() {
+  local work_dir="$(whoami | shasum | cut -d " " -f1)_public_snk_file_checksums_match/"
+  mkdir -p $work_dir
+
+  save_public_key_to_snk $1 $work_dir &
+  save_public_key_to_snk $2 $work_dir &
+  wait
+
+  local file_basename=
+
+  file_basename=$(basename "${1}")
+  local first_file_snk="$work_dir/${file_basename%.*}.snk"
+
+  file_basename=$(basename "${2}")
+  local second_file_snk="$work_dir/${file_basename%.*}.snk"
+
+  local first_file_snk_checksum=$(get_file_checksum $first_file_snk)
+  local second_file_snk_checksum=$(get_file_checksum $second_file_snk)
+  
+  # clean-up tmp dir
+  rm -rf $work_dir
+
+  if [[ $first_file_snk_checksum == $second_file_snk_checksum ]]; then
+    true
+  else
+    false
+  fi
 }
 
 public_keys_match() {
   local first_snk_public_key=$(get_public_key $1)
-  local 
+  local second_snk_public_key=$(get_public_key $2)
+
+  if [[ $first_snk_public_key == $second_snk_public_key ]]; then
+    true
+  else
+    false
+  fi
 }
 
 thumbprints_match() {
   local first_snk_thumbprint=$(get_thumbprint $1)
   local second_snk_thumbprint=$(get_thumbprint $2)
+
   if [[ $first_snk_thumbprint == $second_snk_thumbprint ]]; then
     true
   else
@@ -46,10 +95,27 @@ thumbprints_match() {
   fi
 }
 
-valid_snks_are_compatable() {
-  echo ""
-}
+snks_are_compatable() {
+  local key_source_thumbprints_match=$(thumbprints_match $1 $2)
+  if [[ $key_source_thumbprints_match == true ]]; then
+    echo "thumbprints match"
+  fi
+  local key_source_public_keys_match=$(public_keys_match $1 $2)
+  if [[ $key_source_public_keys_match == true ]]; then
+    echo "public keys match"
+  fi
+  local key_source_public_snk_file_checksums_match=$(public_snk_file_checksums_match $1 $2)
+  if [[ $key_source_public_snk_file_checksums_match == true ]]; then
+    echo "file checksums match"
+  fi
 
+
+  if thumbprints_match $1 $2 && public_keys_match $1 $2 && public_snk_file_checksums_match $1 $2; then
+    true
+  else
+    false
+  fi
+}
 
 #######################################
 # Generates a snk given a key name
@@ -141,7 +207,7 @@ usage_key() {
     #                    option which contains the public key. However,
     #                    If -e|--extract is used without a <path-to-key-source>,
     #                    the given assembly will be delay signed
-    exit 0
+    return 0
     ;;
   * ) printf '
     Usage: k|key [options] [<path-to-key-source>]
@@ -151,7 +217,7 @@ usage_key() {
     Options:
       -h|--help         Display help message
     \n'
-    exit 1
+    return 1
     ;;
   esac
 }
@@ -168,7 +234,7 @@ usage_key() {
 #   -v|--verbose  - Enables verbose logging
 #   -o|--output   - The output directory
 #######################################
-inti_key() {
+init_key() {
   local help=false
   local generate=false
   local keep=false
@@ -179,7 +245,7 @@ inti_key() {
 
   local opts=`getopt -o hgko:ps::v --long help,generate,keep,output:,public,strong::,verbose -n 'key' -- "$@"`
 
-  if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+  if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; return 1 ; fi
 
   eval set -- "$opts"
 
@@ -196,6 +262,11 @@ inti_key() {
       * ) break ;;
     esac
   done
+
+  if [[ $HELP == true ]]; then
+    usage_key "-h"
+    return 1
+  fi
 
   # argument metadata storage
   local strong_key=
@@ -215,46 +286,36 @@ inti_key() {
   # validate arguements
   if [[ $# > 1 ]]; then
 		echo "ERROR: too many arguments provided to assembly_to_il: $@">&2
-		exit 1
+		return 1
 	elif [[ (! -f $@ && ! -z $@) || ($key_source_ext != "dll" && $key_source_ext != "exe" && $key_source_ext != "snk") ]]; then
     echo "ERROR: the key source is not accepted, please provide .dll, .exe, or .snk: $key_source_ext">&2
-    exit 1
+    return 1
   fi
 
   # validate options
   if [[ $strong != false && $public == true ]]; then
     echo "ERROR: invalid options combination -s|--strong and -p|--public - please use -h|--help for more details">&2
-    exit 1
+    return 1
   elif [[ ( $strong != true && $strong != false) && (! -f $strong || $strong_ext != "snk") ]]; then
     echo "ERROR: provided file for strong signing is invalid: $strong">&2
-    exit 1
+    return 1
   elif [[ $strong == true && $generate == true && ! -z $key_soruce ]]; then
     echo "ERROR: cannot strongname sign using a generated key - public keys will not match"
-    exit 1
+    return 1
   elif [[ $strong == true && $key_source_ext != "snk" && $generate != true ]]; then
     echo "ERROR: strong signing is not possible - please provide a .snk as the <path-to-key-source> argument">&2
-    exit 1
+    return 1
   fi
 
-  # validate snk
-  # We preform three phases of checking against incoming keys
+  # we preform three phases of checking against incoming keys
   # 1. thumbprints match
   # 2. public key tokens match
   # 3. snk sha1s match
-  if [[ -f $strong && ! -z $key_source]]; then
-    case "$key_source_ext" in
-      dll | exe )
-          
-        ;;
-      snk )
-        ;;
-      * )
-
-    esac
+  # see snks_are_compatable for more details
+  if [[ -f $strong && -f $key_source]] && ! snks_are_compatable $strong $key_soruce; then
+    echo "ERROR: strongname signing is not possible if the public keys in both files do not match">&2
+    return 1
   fi
 
-
-  if [[ $HELP == true ]]; then
-    usage_key "-h"
-  fi
+  
 }

@@ -3,6 +3,7 @@
 ## Windows
 scoop install busybox
 scoop install mono
+scoop install psutils
 
 ## Ubuntu
 
