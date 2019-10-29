@@ -16,6 +16,9 @@
 ###########
 # GLOBALS #
 ###########
+SCRIPT_FOLDER="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# The name of this script is its containing folder
+SCRIPT_NAME="$(basename $SCRIPT_FOLDER)"
 
 # cmd context
 INPUT=($@)

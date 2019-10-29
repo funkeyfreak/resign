@@ -13,10 +13,6 @@
 # getopt -- GCC library
 # TODO: Complete required libraries
 
-####################
-# Helper Functions #
-####################
-
 ###########
 # Imports #
 ###########
@@ -24,7 +20,11 @@
 # Utilities:
 #	join_by
 #	verbose_log
-. ./utils.sh
+. "$( dirname "${BASH_SOURCE[0]}" )/utils.sh"
+
+####################
+# Helper Functions #
+####################
 
 #######################################
 # Name: usage
@@ -50,6 +50,37 @@ usage() {
 	exit 0
 }
 
+#######################################
+# Name: verify_il
+# Description: Verifies than an il file is valid
+# Returns:
+#   None
+#######################################
+verify_il() {
+	local il_file=$1
+  local verbose=$2
+  local il_file_ext="${il_file##*.}"
+  if [[ $il_file_ext != "il" ]]; then
+    echo "WARNING: invalid file given to verify_il: $il_file">&2
+    return 1
+  fi
+
+  # typically, any file containing .permissionset .. = {..} will be impossible to decompile
+  results=$(pcregrep -M '\.permissionset[\S+\n\r\s]*?\b(?:reqmin)\b[\S+\n\r\s]*?=[\S+\n\r
+\s]*?\{[^{}]*+(\{(?:[^{}]|(?1))*+\}[^{}]*+)++\}' $il_file)
+  if [[ -z $results ]]; then
+    verbose_log $verbose "INFO: $il_file is valid"
+    return 0
+  else
+    verbose_log $verbose "WARNING: $il_file is invalid: $results"
+    return 1
+  fi
+  
+  #tmp_il_file="${il_file%.*}_tmp.il"
+  #pcregrep -Mv '\.permissionset[\S+\n\r\s]*?\b(?:reqmin)\b[\S+\n\r\s]*?=[\S+\n\r\s]*?\{[^{}]*+(\{(?:[^{}]|(?1))*+\}[^{}]*+)++\}' $il_file > $tmp_il_file
+  #rm -f $il_file
+  #mv $tmp_il_file $il_file  
+}
 
 #######################################
 # Name: il_to_assembly
@@ -123,6 +154,12 @@ il_to_assembly() {
     echo "ERROR: output is not a directory: $output"
     exit 1
 	fi
+
+  verbose_log $verbose "INFO: handling edge-cases"
+  verify_il $il_path $verbose
+  if [[ $? != 0 ]]; then
+    $verbose_log $verbose "WARNING: il file may not be converted into an assembly: $il_path">&2
+  fi
 
   verbose_log $verbose "INFO: creating $il_name.$assembly_type in $output"
 

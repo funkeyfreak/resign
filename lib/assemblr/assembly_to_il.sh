@@ -23,7 +23,7 @@ wsl_linux=ubuntu1804
 # Utilities:
 #	join_by
 #	verbose_log
-. ./utils.sh
+. "$( dirname "${BASH_SOURCE[0]}" )/utils.sh"
 
 ####################
 # Helper Functions #
@@ -213,7 +213,7 @@ assembly_to_il() {
 	if [[ -z $output ]]; then
     output=$(dirname "${assembly_path}")
   elif [[ ! -d $output ]]; then
-    echo "ERROR: output is not a directory: $output"
+    echo "ERROR: output is not a directory: $output">&2
     exit 1
 	fi
 	
