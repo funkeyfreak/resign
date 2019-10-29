@@ -8,6 +8,8 @@
 
 ```scoop install pcregrep```
 
+```scoop install psutils```
+
 ## Ubuntu
 
 ```sudo apt-get install mono```

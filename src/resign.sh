@@ -8,7 +8,6 @@
 # Imports #
 ###########
 
-
 # Import the assemblr library
 #   il_to_assembly
 #   assembly_to_il
@@ -17,6 +16,9 @@
 ###########
 # GLOBALS #
 ###########
+SCRIPT_FOLDER="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# The name of this script is its containing folder
+SCRIPT_NAME="$(basename $SCRIPT_FOLDER)"
 
 # cmd context
 INPUT=($@)
@@ -139,15 +141,19 @@ check_path() {
 #########################
 
 init_resign() {
-  OPTS=`getopt -o hbdsv --long help,backup,dry-run,save-key,verbose -n 'resign' -- "$@"`
+  OPTS=`getopt -o h::bdsv --long help::,backup,dry-run,save-key,verbose -n 'resign' -- "$@"`
 
   if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
 
+  echo "all ${OPTS[@]}"
+  echo "$optstring  "
   eval set -- "$OPTS"
+
+  local test_value=
 
   while true; do
     case "$1" in
-      -h | --help ) HELP=true; shift ;;
+      -h | --help ) HELP=true; echo "lala $optarg - $@";if [[ ! -z $2 ]]; then test_value=$2; shift 2; else test_value=true; shift; fi ;;
       -b | --backup ) BACKUP=true; shift ;;
       -d | --dry-run ) DRY_RUN=true; shift ;;
       -s | --save-key ) SAVE_KEY=true; shift ;;
@@ -156,9 +162,11 @@ init_resign() {
       * ) break ;;
     esac
   done
+
+  echo "test_Value is $test_value"
   
   if [[ $HELP == true ]]; then
-    usage "-h"
+    usage --help
   fi
 }
 
@@ -409,25 +417,10 @@ function analyze_package() {
   done
 }
 
-#PATH_ARG="$1"
-#if [[ -d "$PATH_ARG" ]]; then
-#  PATH_ARG="$(cd "$(dirname "$1")"; pwd)/$(basename "$1")"
-#  echo "processing $PATH_ARG"
-#elif [ -z $PATH_ARG ]; then
-#  PATH_ARG="$(pwd)"
-#elif [[ -f "$PATH_ARG" ]] && [ "${PATH_ARG##*.}" = "dll" ]; then
-  # do nothing - $PATH_ARG is good
-#  echo "processing single dll $PATH_ARG"
-#else
-#  usage
-#  echo "ERROR $1 is not a valid directory"
-#  exit 1
-#fi
-
 #analyze_package $PATH_ARG
 
 init $@
-
+main $@
 #prep_commands $@
 
 #ilasm
