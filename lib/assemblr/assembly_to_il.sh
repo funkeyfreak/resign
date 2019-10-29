@@ -223,6 +223,7 @@ assembly_to_il() {
 
 	verbose_log $verbose "INFO: creating $assembly_name.il in $output"
 
+  # TODO: move to global-scoped script
   local os_name=$(uname)
 
   if [[ -f "$output/$assembly_name.il" ]]; then

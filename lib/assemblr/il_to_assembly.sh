@@ -56,6 +56,7 @@ usage() {
 # Returns:
 #   None
 #######################################
+# TODO: add more test-cases
 verify_il() {
 	local il_file=$1
   local verbose=$2
@@ -74,12 +75,7 @@ verify_il() {
   else
     verbose_log $verbose "WARNING: $il_file is invalid: $results"
     return 1
-  fi
-  
-  #tmp_il_file="${il_file%.*}_tmp.il"
-  #pcregrep -Mv '\.permissionset[\S+\n\r\s]*?\b(?:reqmin)\b[\S+\n\r\s]*?=[\S+\n\r\s]*?\{[^{}]*+(\{(?:[^{}]|(?1))*+\}[^{}]*+)++\}' $il_file > $tmp_il_file
-  #rm -f $il_file
-  #mv $tmp_il_file $il_file  
+  fi 
 }
 
 #######################################
