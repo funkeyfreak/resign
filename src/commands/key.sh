@@ -30,7 +30,7 @@
 #   string - The calculated checksum
 #######################################
 get_file_checksum() {
-  shasum $1 | cut -d ' ' -f1
+  echo "$(shasum $1 | cut -d ' ' -f1)"
 }
 
 #######################################
@@ -66,7 +66,7 @@ generate_snk() {
   fi
 
   # TODO: Clean-up
-  sn $( if [[ $verbose != true ]]; then echo "-q"; fi ) -k "$output_dir/$key_name.snk"
+  sn $( if [[ $verbose != true ]]; then echo "-q"; fi ) -k "$output_dir/$key_name.snk">&2 
 }
 
 #######################################
@@ -86,7 +86,7 @@ extract_public_key() {
   local output=$2
   local verbose=$3
 
-  local file_containing_key_fullname=$(basename "${1}")
+  local file_containing_key_fullname="$(basename "${1}")"
   local file_containing_key_ext="${1##*.}"
   local file_containing_key_name="${file_containing_key_fullname%.*}"
 
@@ -102,9 +102,9 @@ extract_public_key() {
   # clean-up if-statement
   if [[ -f $file_containing_key ]]; then
     if [[ $file_containing_key_ext == "ext" || $file_containing_key_ext = "dll" ]]; then
-      sn $( if [[ $verbose != true ]]; then echo "-q"; fi ) -e "$file_containing_key" "$output/$public_key_name"
+      sn $( if [[ $verbose != true ]]; then echo "-q"; fi ) -e "$file_containing_key" "$output/$public_key_name">&2 
     elif [[ $file_containing_key_ext == "snk" ]]; then
-      sn $( if [[ $verbose != true ]]; then echo "-q"; fi ) -p "$file_containing_key" "$output/$public_key_name"
+      sn $( if [[ $verbose != true ]]; then echo "-q"; fi ) -p "$file_containing_key" "$output/$public_key_name">&2 
     else
       echo "ERROR: the provided file is not supported by extract_public_key: $file_containing_key">&2
       return 1
@@ -129,9 +129,9 @@ snk_is_public_private_pair() {
   local file_containing_key=$1
   local verbose=$2
   local tmp_dir="$(pwd)/$(uuidgen)"
-  mkdir -p $tmp_dir
+  mkdir -p $tmp_dir>&2 
 
-  local file_containing_key_fullname=$(basename "${1}")
+  local file_containing_key_fullname="$(basename "${1}")"
   local file_containing_key_ext="${1##*.}"
   local file_containing_key_name="${file_containing_key_fullname%.*}"
   local tmp_public_key="$tmp_dir/${file_containing_key_name}_public-key.snk"
@@ -146,8 +146,8 @@ snk_is_public_private_pair() {
 
   extract_public_key $file_containing_key $tmp_dir $verbose
   
-  public_key_checksum=$(get_file_checksum $tmp_public_key)
-  private_key_checksum=$(get_file_checksum $file_containing_key)
+  public_key_checksum="$(get_file_checksum $tmp_public_key)"
+  private_key_checksum="$(get_file_checksum $file_containing_key)"
   rm -rf $tmp_dir &
   if [[ "$public_key_checksum" != "$private_key_checksum" ]]; then
     true
@@ -196,7 +196,7 @@ usage_key() {
                                         a newly generated snk
       key -p ./some.snk               - Will sign the assemblies with the public-key
                                         in ./some.snk
-    \n'
+    \n'>&2 
     ;;
   * ) printf '
     Usage: k|key [options] [<path-to-key-source>]
@@ -205,7 +205,7 @@ usage_key() {
 
     Options:
       -h|--help         Display help message
-    \n'
+    \n'>&2 
     ;;
   esac
 }
@@ -230,7 +230,7 @@ usage_key() {
 #   -v|--verbose  - Enables verbose logging
 #   -o|--output   - The output directory
 #######################################
-init_key() {
+key() {
   local help=false
   local generate=false
   local keep=false
@@ -238,10 +238,11 @@ init_key() {
   local public=false
   local strong=false
   local verbose=false
+  local opts
 
-  #local opts=`getopt -o hgko:ps::v --long help,generate,keep,output:,public,strong::,verbose -n 'key' -- "$@"`
-  local opts=`getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "$@"`
-  if [ $? != 0 ] ; then echo "Failed parsing options." >&2; usage_key; exit 1; fi
+  if ! opts=$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "$@"); then 
+    echo "Failed parsing options." >&2; usage_key; return 1;
+  fi
 
   eval set -- "$opts"
   unset opts
@@ -257,23 +258,23 @@ init_key() {
       #-s | --strong ) if [[ ! -z $2 ]]; then strong="$2"; shift 2; else strong=true; shift; fi; ;;
       -v | --verbose ) verbose=true; shift ;;
       -- ) shift; break ;;
-      * ) echo "yo"; break ;;
+      * ) break ;;
     esac
   done
 
   if [[ $help == true ]]; then
     usage_key "-h"
-    return 0
+    exit 0
   fi
 
   local key_source_path="$@"
-  local key_source=$(basename "$key_source_path") 2> /dev/null
+  local key_source="$(basename "$key_source_path")" 2> /dev/null
   local key_source_ext="${key_source_path##*.}"
   local key_source_name="${key_source%.*}"
 
   # validate arguements
   if [[ $# > 1 ]]; then
-		echo "ERROR: too many arguments provided to init_key: $key_source_path">&2
+		echo "ERROR: too many arguments provided to key: $key_source_path">&2
     usage_key
 		return 1
 	elif [[ (! -f $key_source_path && ! -z $key_source_path) && ($key_source_ext != "dll" && $key_source_ext != "exe" && $key_source_ext != "snk") ]]; then

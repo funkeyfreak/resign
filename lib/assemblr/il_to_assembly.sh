@@ -28,7 +28,7 @@
 
 #######################################
 # Name: usage
-# Description: Prints the usage text for this library
+# Description: Prints the usage text for this script
 # Returns:
 #   None
 #######################################
@@ -67,8 +67,7 @@ verify_il() {
   fi
 
   # typically, any file containing .permissionset .. = {..} will be impossible to decompile
-  results=$(pcregrep -M '\.permissionset[\S+\n\r\s]*?\b(?:reqmin)\b[\S+\n\r\s]*?=[\S+\n\r
-\s]*?\{[^{}]*+(\{(?:[^{}]|(?1))*+\}[^{}]*+)++\}' $il_file)
+  results=$(pcregrep -M '\.permissionset[\S+\n\r\s]*?\b(?:reqmin)\b[\S+\n\r\s]*?=[\S+\n\r\s]*?\{[^{}]*+(\{(?:[^{}]|(?1))*+\}[^{}]*+)++\}' $il_file)
   if [[ -z $results ]]; then
     verbose_log $verbose "INFO: $il_file is valid"
     return 0
@@ -77,6 +76,10 @@ verify_il() {
     return 1
   fi 
 }
+
+######################
+# Exported Functions #
+######################
 
 #######################################
 # Name: il_to_assembly
