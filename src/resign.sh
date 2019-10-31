@@ -13,7 +13,7 @@
 #   assembly_to_il
 . $( dirname "${BASH_SOURCE[0]}" )/../lib/assemblr/assemblr.sh
 . $( dirname "${BASH_SOURCE[0]}" )/commands/key.sh
-#. $( dirname "${BASH_SOURCE[0]}" )/commands/check.sh
+. $( dirname "${BASH_SOURCE[0]}" )/commands/check.sh
 
 ###########
 # GLOBALS #
@@ -80,70 +80,6 @@ get_index() {
 }
 
 #######################################
-# Name: validate_options
-# Description: Prepares the options and subcommands to resign
-# Returns:
-#   None
-#######################################
-# validate_options() {
-#   local loc_cmd=("${INPUT[@]}")
-
-#   local idx_cmd_check="$(get_index $@ "c")"
-#   if [[ $idx_cmd_check == -1 ]]; then
-#       idx_cmd_check="$(get_index $@ "check")"
-#   fi
-
-#   local idx_cmd_key="$(get_index $@ "k")"
-#   if [[ $idx_cmd_key == -1 ]]; then
-#       idx_cmd_key="$(get_index $@ "key")"
-#   fi
-
-#   # process base-command
-#   if [[ $idx_cmd_check != $idx_cmd_key ]]; then
-#     local idx_cmd_end=$(($idx_cmd_check > $idx_cmd_key ? $idx_cmd_check : $idx_cmd_key))
-#     CMD=(${loc_cmd[@]:0:$idx_cmd_end})
-#   else
-#     CMD=($@)
-#   fi
-
-#   # process subcommands
-#   unset 'loc_cmd[${#loc_cmd[@]}-1]'
-#   if [[ $idx_cmd_check != $idx_cmd_key ]]; then
-#     local end_of_cmd=$(($NUM_ARGS-1))
-
-#     # if either of the subcommands exists, go ahead and set the appropriate CMD
-#     if [[ $idx_cmd_check != -1 ]]; then
-#         CHECK_CMD=(${loc_cmd[@]:$(($idx_cmd_check+1)):$end_of_cmd})
-#     fi
-#     if [[ $idx_cmd_key != -1 ]]; then
-#         KEY_CMD=(${loc_cmd[@]:$(($idx_cmd_key+1)):$end_of_cmd})
-#     fi
-
-#     # if both subcommands are set, we need to find and remove the overlap    
-#     if [[ ${CHECK_CMD[@]} && ${CHECK_CMD[@]-x} ]] && [[ ${KEY_CMD[@]} && ${KEY_CMD[@]-x} ]]; then
-#       # if check has been suplied and key has not
-#       local idx_to_remove=$(get_index ${CHECK_CMD[@]} "key")
-#       if [[ $idx_to_remove == -1 ]]; then
-#         idx_to_remove=$(get_index ${CHECK_CMD[@]} "k")
-#       fi
-#       if [[ $idx_to_remove != -1 ]]; then
-#           CHECK_CMD=(${CHECK_CMD[@]:0:$idx_to_remove})
-#       fi
-      
-#       # if key has been suplied and check has not
-#       idx_to_remove=$(get_index ${KEY_CMD[@]} "check")
-#       if [[ idx_to_remove == -1 ]]; then
-#         idx_to_remove=$(get_index ${KEY_CMD[@]} "c")
-#       fi
-#       if [ $idx_to_remove != -1 ]; then 
-#           KEY_CMD=(${KEY_CMD[@]:0:$idx_to_remove})
-#       fi
-#     fi
-#   fi
-#     echo "HERE cmd: ${CMD[@]} check: ${CHECK_CMD[@]} key: ${KEY_CMD[@]}"
-# }
-
-#######################################
 # Name: validate_arguements
 # Description: Prepares the arguments and subcommands to resign
 # Returns:
@@ -179,7 +115,12 @@ usage() {
       -r|--robust     When given a folder, this will prompt our tool to not fail on a single file
                       NOTE: any artifacts from failed resign-attempts will be left in the directory which
                       contains the assembly which failed to resign
-      -v|--verbose    Verbose output
+      -s|--save-all   Will save most of the intermediate files used during resigning. This includes dis-
+                      -assembled assemblies in their intermeidate language form and unsigned assemblies 
+                      (<assembly-name>.orig.[dll|exe])
+                      NOTE: Will NOT save the keys used in resigning. Please pass k|key -k|--keep to use
+                      this scenario
+      -v|--verbose    Enables verbose output
           
     Command(s):
       check         Run a check on the assemblies before signing
@@ -232,11 +173,16 @@ init_resign() {
     echo "ERROR: cannot have empty arguements">&2
     return 1
   fi
+
   local input=($1)
-  local -n res=$2 
+  local -n res=$2
   local cmd_arg="${input[-1]}"
-  if [[ ( ! -d $cmd_arg ) ||  ( -f $cmd_arg && ( "${cmd_arg##*.}" != "dll" && "${cmd_arg##*.}" != "exe" ) ) ]]; then
-    echo "ERROR: cannot pass with out a valid argument">&2
+  if [[ $(get_index "$cmd_arg" "c") != -1 || $(get_index "$cmd_arg" "check") != -1 || 
+        $(get_index "$cmd_arg" "k") != -1 || $(get_index "$cmd_arg" "key") != -1 ]]; then
+    echo "ERROR: poorly formed command: $cmd_arg">&2
+    return 1
+  elif [[ ( ! -d $cmd_arg ) || ( -f $cmd_arg && ( "${cmd_arg##*.}" != "dll" || "${cmd_arg##*.}" != "exe" ) ) ]]; then
+    echo "ERROR: invalid argument: $cmd_arg">&2
     return 1
   fi
 
@@ -282,7 +228,6 @@ init_resign() {
   cmd=( "${cmd[@]}" "$cmd_arg" )
 
   # process subcommands
-  # unset 'loc_cmd[${#loc_cmd[@]}-1]'
   if [[ $idx_cmd_check != $idx_cmd_key ]]; then
     local end_of_cmd=$(($num_args-1))
     # if either of the subcommands exists, go ahead and set the appropriate CMD
@@ -322,9 +267,12 @@ init_resign() {
 
 init() {
   # set all inputs to local args & pass-by-reference args
+  declare -A t_options
+  local t_arguments
+
   local input=($1)
-  local -n options=$2
-  local -n arguements=$3
+  local -n options=${2:-t_options}
+  local -n arguments=${3:t_arguments}
 
   # temp helper variables
   local help=false
@@ -332,11 +280,12 @@ init() {
   local dry_run=false
   local output=.
   local robust=false
+  local save_all=false
   local verbose=false
 
-  if ! opts=$(getopt -o hbdo:rv --long help,backup,dry-run,output:,robust,verbose -n 'resign' -- "${input[@]}"); then 
-    echo "Failed parsing options." >&2
-    usage_key
+  if ! opts=$(getopt -o hbdo:rsv --long help,backup,dry-run,output:,robust,save-all,verbose -n 'resign' -- "${input[@]}"); then 
+    echo "ERROR: failed while parsing resigns options: ${input[@]}" >&2
+    usage
     return 1
   fi
 
@@ -350,6 +299,7 @@ init() {
       -d | --dry-run ) dry_run=true; shift ;;
       -o | --output ) output="$2"; shift 2 ;;
       -r | --robust ) robust=true; shift ;;
+      -s | --save-all ) save_all=true; shift ;;
       -v | --verbose ) verbose=true; shift ;;
       -- ) shift; break ;;
       * ) break ;;
@@ -362,26 +312,25 @@ init() {
   fi
 
   local arr=($@) 2> /dev/null
-
-  arg=("${arr[-1]}")  
-  if [[ ( -f $path ) && ( ! -d $path ) && ("${path##*.}" != "dll" && "${path##*.}" != "exe") ]]; then
+  local arg=("${arr[-1]}")  
+  if [[ ( ! -d $arg ) || ( ( -f $arg ) && ("${arg##*.}" != "dll" && "${arg##*.}" != "exe") ) ]]; then
     echo "ERROR: arguement $1 is not a valid assembly or a directory">&2
     usage
-    exit 1
-  fi 
+    return 1
+  fi
 
-  echo "BACKUP: $backup"
-  echo "DRY_RUN: $dry_run"
-  echo "OUTPUT: $output"
-  echo "ROBUST: $robust"
-  echo "VERBOSE: $verbose"
+  if [[ $backup == true && $dry_run == true ]]; then
+    echo "ERROR: running backup and dry_run is an illegal option">&2
+    usage
+    return 1
+  fi
 
-  options["help"]=$help
   options["backup"]=$backup
   options["dry_run"]=$dry_run
   options["output"]=$output
-  options["robust"]=false
-  options["verbose"]=false
+  options["robust"]=$robust
+  options["verbose"]=$verbose
+  arguments=$arg
 }
 
 #######################################
@@ -407,8 +356,8 @@ resign() {
 
   declare -A parsed_input
 
-  declare -A opt
-  local arg=
+  declare -A cmd_opt
+  local cmd_arg=
 
   declare -A check_opt
   local check_arg=
@@ -421,48 +370,71 @@ resign() {
   init_resign "${all_args[@]}" parsed_input >&2
   if [[ $? != 0 ]]; then
     echo "ERROR: failed to parse input: $@" >&2
+    usage
     exit 1
   fi
 
-  # if $? != 0; then
-  #   echo "ERROR: failed to parse input: $@" >&2
-  # fi
-
-  # arg=("${parsed_input[0]}")
-  # arg=("${arg[-1]}")  
-  # cmd=("")
-  # echo "arg: ${arg[@]} cmd: ${cmd[@]}"
+  # valid all commands
+  local options_sep='--'
+  local idx_resign=
+  echo "after ${t_key_cmd_inputs[@]}"
+  # #if [[  ]]
+  # local arrIN=(${IN//;/ })
 
 
-  # if ! init $@; then 
+  # initialize all commands
+  init "${parsed_input[cmd]}" cmd_opt cmd_arg
+  if [[ $? != 0 ]]; then 
+    echo "ERROR: failed to initialize resign">&2
+    exit 1
+  fi
+
+  echo "cmd opt ${cmd_opt[@]}"
+  echo "cmd arg $cmd_arg"
+
+  # check processes files provided to resign
+  # TODO: check command
+  if [[ ! -z ${parsed_input[check]} ]]; then
+    local check_cmd_input=( "${parsed_input[check]}" "$arg" )
+    # check "${check_cmd_input[@]}" check_opt check_arg
+  elif [[ $(get_index ${all_args[@]} "check") != -1 ]]; then
+    usage_check
+    exit 1
+  fi
+
+  # key handles key creation for resign
+  if [[ ! -z ${parsed_input[key]} ]]; then
+    key "${parsed_input[key]}" key_opt key_arg
+  elif [[ $(get_index ${all_args[@]} "key") != -1 ]]; then
+    usage_key
+    exit 1
+  fi
+
+  exit 0
+  # local arr=($@)
+
+  # PATH_ARG=("${arr[-1]}")
+  # PATH_ARG=$(validate_arguements $PATH_ARG)
+  
+  # if [[ -z "$PATH_ARG" ]]; then
+  #   echo "ERROR: arguement $1 is not a valid assembly or a directory"
+  #   usage
   #   exit 1
   # fi  
 
-  exit 0
-  local arr=($@)
+  # if [[ ! -z ${check_cmd[@]} ]]; then 
+  #   echo "check: ${check_cmd[@]}"
+  #   check ${check_cmd[@]}
+  #   check_arg=("${check_cmd[-1]}")
+  #   echo "check arg: $check_arg"
+  # fi
 
-  PATH_ARG=("${arr[-1]}")
-  PATH_ARG=$(validate_arguements $PATH_ARG)
-  
-  if [[ -z "$PATH_ARG" ]]; then
-    echo "ERROR: arguement $1 is not a valid assembly or a directory"
-    usage
-    exit 1
-  fi  
-
-  if [[ ! -z ${check_cmd[@]} ]]; then 
-    echo "check: ${check_cmd[@]}"
-    check ${check_cmd[@]}
-    check_arg=("${check_cmd[-1]}")
-    echo "check arg: $check_arg"
-  fi
-
-  if [[ ! -z ${key_cmd[@]} ]]; then
-    echo "key: ${key_cmd[@]}"
-    key ${key_cmd[@]}
-    key_arg=("${key_cmd[-1]}")
-    echo "check arg: $key_arg"
-  fi
+  # if [[ ! -z ${key_cmd[@]} ]]; then
+  #   echo "key: ${key_cmd[@]}"
+  #   key ${key_cmd[@]}
+  #   key_arg=("${key_cmd[-1]}")
+  #   echo "check arg: $key_arg"
+  # fi
 
   
 

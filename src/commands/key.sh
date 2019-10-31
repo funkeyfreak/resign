@@ -210,6 +210,10 @@ usage_key() {
   esac
 }
 
+validate_key_cmd_inputs() {
+  echo "$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "$@")"
+}
+
 ######################
 # Exported Functions #
 ######################
@@ -217,31 +221,36 @@ usage_key() {
 #######################################
 # Initalizes the key sub-command
 # Arguments:
-#   $@: optional(string[]) - The incomming array of arguments
-#   
+#   $1: optional(string[]) - The incomming array of arguments
+#   $2: required(string[])
+#   $3:
 # Returns:
-#   [
-#     0: keep   - boolean   : The -k|--keep flag
-#     1: public - boolean   : The -p|--public flag
-#     2: key    - string    : The path to the key file
-#   ]
+#   None
 # NOTE:
 #   This command uses the following hidden flags:
 #   -v|--verbose  - Enables verbose logging
 #   -o|--output   - The output directory
 #######################################
 key() {
+  # set all inputs to local args & pass-by-reference args
+  declare -A t_options
+  local t_arguments
+
+  local input=($1)
+  local -n options=${2:-t_options}
+  local -n arguments=${3:t_arguments}
+
+  # temp helper variables
   local help=false
   local generate=false
   local keep=false
   local output=
   local public=false
-  local strong=false
   local verbose=false
-  local opts
+  local opts=
 
-  if ! opts=$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "$@"); then 
-    echo "Failed parsing options." >&2; usage_key; return 1;
+  if ! opts=$(validate_key_cmd_inputs "${input[@]}"); then  #$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "${input[@]}"); then 
+    echo "failed parsing options: ${input[@]}" >&2; usage_key; return 1;
   fi
 
   eval set -- "$opts"
@@ -255,7 +264,6 @@ key() {
       -k | --keep ) keep=true; shift ;;
       -o | --output ) output="$2"; shift 2 ;;
       -p | --public ) public=true; shift ;;
-      #-s | --strong ) if [[ ! -z $2 ]]; then strong="$2"; shift 2; else strong=true; shift; fi; ;;
       -v | --verbose ) verbose=true; shift ;;
       -- ) shift; break ;;
       * ) break ;;
@@ -309,7 +317,9 @@ key() {
   local extracted_from_assembly=false
   if [[ $key_source_ext == "dll" || $key_source_ext == "exe" ]]; then
     extract_public_key $key_source_path $key_output $verbose
-    key="${key_source_path%.*}_public_key.snk"
+    local pub_key="$key_output/${key_source_name}_public-key.snk"
+    key="$key_output/$key_source_name.snk"
+    mv -f "$pub_key" "$key"
     extracted_from_assembly=true
   elif [[ $key_source_ext != "snk" && $generate == true ]]; then
     local generated_snk_name="$(uuidgen)_generated"
@@ -322,12 +332,17 @@ key() {
   # handle public flag
   if [[ $public == true && $extracted_from_assembly != true ]]; then
     if snk_is_public_private_pair $key $verbose; then
+      local pub_key="${key%.*}_public-key.snk"
       extract_public_key $key $key_output $verbose
+      # if keep is not true, delete the private key
+      $keep || rm -f $key
+
+      key=$pub_key
     fi
   fi
 
-  declare -a results
-  results=( $keep $public $key );
-
-  echo "${results[@]}"
+  options["generate"]=$generate
+  options["keep"]="$keep"
+  options["public"]=$public
+  arguements=$key
 }
