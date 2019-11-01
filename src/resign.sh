@@ -15,6 +15,9 @@
 . $( dirname "${BASH_SOURCE[0]}" )/commands/key.sh
 . $( dirname "${BASH_SOURCE[0]}" )/commands/check.sh
 
+# TODO: move to global-scoped script AND use uname to determine if on windows
+[ -x "$(uuidgen -h 2> /dev/null)" ] || alias uuidgen='powershell -command "[guid]::newguid().Guid"|xargs'
+
 ###########
 # GLOBALS #
 ###########
@@ -23,36 +26,36 @@
 #SCRIPT_NAME="$(basename $SCRIPT_FOLDER)"
 
 # cmd context
-INPUT=($@)
-NUM_ARGS=$#
-CMD=
-CHECK_CMD=
-KEY_CMD=
+# INPUT=($@)
+# NUM_ARGS=$#
+# CMD=
+# CHECK_CMD=
+# KEY_CMD=
 
-# options
-HELP=false
-BACKUP=false
-DRY_RUN=false
-SAVE_KEY=fakse
-VERBOSE=false
+# # options
+# HELP=false
+# BACKUP=false
+# DRY_RUN=false
+# SAVE_KEY=fakse
+# VERBOSE=false
 
-# options: check
-DELAY=false
-NATIVE=false
-REMOVE=false
-SIGNED=false
+# # options: check
+# DELAY=false
+# NATIVE=false
+# REMOVE=false
+# SIGNED=false
 
-# options: key
-EXTRACT=false
+# # options: key
+# EXTRACT=false
 
-# argeuemtns
-PATH_ARG=
+# # argeuemtns
+# PATH_ARG=
 
-# arguements: check
-CHECK_ARG=
+# # arguements: check
+# CHECK_ARG=
 
-# argeuments: key
-KEY_ARG=
+# # argeuments: key
+# KEY_ARG=
 
 ####################
 # HELPER FUNCTIONS #
@@ -147,6 +150,20 @@ usage() {
     \n'>&2
     ;;
   esac
+}
+
+#######################################
+# Name: verbose_log
+# Description: Prints the usage text for this script
+# Returns:
+#   None
+#######################################
+# TODO: Move to a utilities script
+# TODO: Remove all "echo" logging statements - handle in this function & check 'level', e.g. ERROR, WARNING, etc.
+verbose_log() {
+  if [[ $1 == true ]]; then
+    echo "${@:2}" 
+  fi
 }
 
 #########################
@@ -283,6 +300,8 @@ init() {
   local save_all=false
   local verbose=false
 
+  local opts=
+
   if ! opts=$(getopt -o hbdo:rsv --long help,backup,dry-run,output:,robust,save-all,verbose -n 'resign' -- "${input[@]}"); then 
     echo "ERROR: failed while parsing resigns options: ${input[@]}" >&2
     usage
@@ -312,12 +331,29 @@ init() {
   fi
 
   local arr=($@) 2> /dev/null
-  local arg=("${arr[-1]}")  
-  if [[ ( ! -d $arg ) || ( ( -f $arg ) && ("${arg##*.}" != "dll" && "${arg##*.}" != "exe") ) ]]; then
+  local arg=("${arr[-1]}")
+
+  # validate arguements  
+  if [[ ( ! -d $arg ) || ( ( -f $arg ) && ("${arg##*.}" != "dll" || "${arg##*.}" != "exe") ) ]]; then
     echo "ERROR: arguement $1 is not a valid assembly or a directory">&2
     usage
     return 1
   fi
+
+  if [[ -d $arg ]]; then
+    arg=($(du -a ./$1 | grep "\.dll[[:cntrl:]]*$\|\.exe[[:cntrl:]]*$" | cut -f2-))
+    if [[ ${#arg[@]} == 0 ]]; then
+      echo "ERROR: provided folder does not contain any resignable files: $arg">&2; 
+      return 1
+    fi
+  fi
+
+  # validate options
+  if [[ ! -d $output ]]; then
+    echo "ERROR: output is not a directory: $output">&2
+    usage
+    return 1
+	fi
 
   if [[ $backup == true && $dry_run == true ]]; then
     echo "ERROR: running backup and dry_run is an illegal option">&2
@@ -325,12 +361,13 @@ init() {
     return 1
   fi
 
+
   options["backup"]=$backup
   options["dry_run"]=$dry_run
   options["output"]=$output
   options["robust"]=$robust
   options["verbose"]=$verbose
-  arguments=$arg
+  arguments=("${arg[@]}")
 }
 
 #######################################
@@ -347,9 +384,11 @@ init() {
 #   None
 #######################################
 resign() {
-  local num_args=$#
-  local all_args=$@
-  if [[ $# == 0 ]]; then
+  local all_args=$1
+  local resign_tmp_dir=$2
+
+  echo "$1"
+  if [[ $# != 2 ]]; then
     usage
     return 1
   fi
@@ -357,7 +396,7 @@ resign() {
   declare -A parsed_input
 
   declare -A cmd_opt
-  local cmd_arg=
+  declare -a cmd_arg=
 
   declare -A check_opt
   local check_arg=
@@ -375,42 +414,48 @@ resign() {
   fi
 
   # valid all commands
-  local options_sep='--'
-  local idx_resign=
-  echo "after ${t_key_cmd_inputs[@]}"
-  # #if [[  ]]
-  # local arrIN=(${IN//;/ })
+  # We validate these commands in the following order to preserve optimal command run-time
+  # * The main command (cmd)
+  # * The check sub-command (check)
+  # * The key sub-command (key)
 
-
-  # initialize all commands
+  # this initialization function sets global args for the operation of this method
   init "${parsed_input[cmd]}" cmd_opt cmd_arg
-  if [[ $? != 0 ]]; then 
+  if [[ $? != 0 ]]; then
     echo "ERROR: failed to initialize resign">&2
     exit 1
   fi
 
-  echo "cmd opt ${cmd_opt[@]}"
-  echo "cmd arg $cmd_arg"
-
   # check processes files provided to resign
   # TODO: check command
   if [[ ! -z ${parsed_input[check]} ]]; then
-    local check_cmd_input=( "${parsed_input[check]}" "$arg" )
-    # check "${check_cmd_input[@]}" check_opt check_arg
+    # check "${parsed_input[check]}" "${cmd_arg[@]}" check_opt check_arg ${cmd_opt[output]} ${cmd_opt[verbose]}
+    # cmd_arg=("${check_arg[@]}")
+    # verbose_log ${cmd_opt[verbose]} "INFO: check subcommand processed successfully"
+    echo "check">&2
   elif [[ $(get_index ${all_args[@]} "check") != -1 ]]; then
     usage_check
     exit 1
   fi
 
+  echo "cmd opt ${cmd_opt[@]}">&2
+  echo "cmd arg ${cmd_arg[@]}">&2
+
   # key handles key creation for resign
   if [[ ! -z ${parsed_input[key]} ]]; then
-    key "${parsed_input[key]}" key_opt key_arg
+    key "${parsed_input[key]}" key_opt key_arg ${cmd_opt[output]} ${cmd_opt[verbose]}
+    verbose_log ${cmd_opt[verbose]} "INFO: key subcommand processed successfully"
   elif [[ $(get_index ${all_args[@]} "key") != -1 ]]; then
     usage_key
     exit 1
   fi
 
-  exit 0
+  # process all files
+  for file in "${cmd_arg[@]}"; do
+    true
+  done
+  
+
   # local arr=($@)
 
   # PATH_ARG=("${arr[-1]}")
@@ -536,53 +581,33 @@ resign() {
 #   esac
 # }
 
-function compose() {
-  echo "composing $PATH_ARG"
-
-}
-
-function decompose() {
-    echo "decomposing $PATH_ARG"
-
-}
-
-function sign() {
-  echo "signing $PATH_ARG"
-
-}
-
-function report() {
-  echo "reporting $PATH_ARG"
-
-}
-
-function generate_new_snk() {
-  echo "generating new snk $PATH_ARG"
-}
-
-function analyze_package() {
-  printf "Begin analyzing assemblies in for $1\n"
-
-  for entry in $(du -a $1 | grep .dll | cut -f2-) 
-  do
-    printf "Analyzing $entry\n"
-  done
-}
 
 main() {
-  resign $@
+  # create a temporary directory - will handle cleanup if script crashes or
+  # if resign is forcefully closed
+  local resign_tmp_dir=$(mktemp -d -t 'resign.XXXXXXXXXX' 2> /dev/null || mktemp -d -t 'resign.XXXXXXXXXX')
+  if [[ $? != 0 ]]; then
+    echo "ERROR: Cannot create directory - please run this script as sudo"
+    exit 1
+  fi
+
+  emrg_exit() {
+    trap - SIGTERM && kill 0
+  }
+
+  norm_exit() {
+    local exit_code=$?
+    rm -rf "$resign_tmp_dir"
+    exit $exit_code
+  }
+
+  trap norm_exit EXIT INT TERM
+  trap emrg_exit SIGINT SIGTERM
+
+  local main_args="${@}"
+
+  resign "${main_args[@]}" $resign_tmp_dir
+  exit 0
 }
 
-#analyze_package $PATH_ARG
-#main $@
-
-#tester
-# results=
-# all_args=$@
-# init_resign "${all_args[@]}" results
-# echo "results ${results[@]}"
 main $@
-#validate_options $@
-
-#ilasm
-#ikdasm

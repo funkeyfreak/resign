@@ -210,7 +210,14 @@ usage_key() {
   esac
 }
 
-validate_key_cmd_inputs() {
+#######################################
+# Initalizes the key sub-command
+# Arguments:
+#   $@: required(string[]) - The incomming array of arguments
+# Returns:
+#   string[] - An array of strings representing the parsed options
+#######################################
+getopt_key() {
   echo "$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "$@")"
 }
 
@@ -244,27 +251,27 @@ key() {
   local help=false
   local generate=false
   local keep=false
-  local output=
+  local output=$4
   local public=false
-  local verbose=false
+  local verbose=$5
+
   local opts=
 
-  if ! opts=$(validate_key_cmd_inputs "${input[@]}"); then  #$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "${input[@]}"); then 
+  if ! opts=$(getopt_key "${input[@]}"); then  #$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "${input[@]}"); then 
     echo "failed parsing options: ${input[@]}" >&2; usage_key; return 1;
   fi
 
   eval set -- "$opts"
   unset opts
 
-  while true; 
-  do
+  while true; do
     case "$1" in
       -h | --help ) help=true; shift ;;
       -g | --generate ) generate=true; shift ;;
       -k | --keep ) keep=true; shift ;;
-      -o | --output ) output="$2"; shift 2 ;;
+      -o | --output ) output="${output:-$2}"; shift 2 ;;
       -p | --public ) public=true; shift ;;
-      -v | --verbose ) verbose=true; shift ;;
+      -v | --verbose ) verbose=${verbose:-true}; shift ;;
       -- ) shift; break ;;
       * ) break ;;
     esac
