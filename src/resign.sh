@@ -472,7 +472,8 @@ resign() {
 
   # process all files
   for file in "${cmd_arg[@]}"; do
-    resign_helper $file $
+    # NOTE TMP OUTPUT 
+    resign_helper $file $key_arg ${cmd_opt[output]} true # ${cmd_opt[verbose]}
     exit 0
   done
 }
