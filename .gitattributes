@@ -1,4 +1,4 @@
-* text=auto
+* text=auto eol=lf
 
 # Never modify line endings of our bash scripts
-*.sh -crlf
+*.sh text
