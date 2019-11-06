@@ -110,7 +110,7 @@ extract_public_key() {
       return 1
     fi
   else
-    echo "ERROR: the provided arguement to extract_public_key is invalid: $file_containing_key">&2
+    echo "ERROR: the provided argument to extract_public_key is invalid: $file_containing_key">&2
     return 1
   fi
 }
@@ -140,7 +140,7 @@ snk_is_public_private_pair() {
   local private_key_checksum=
 
   if [[ ! -f $file_containing_key || $file_containing_key_ext != "snk" ]]; then
-    echo "ERROR: the provided arguement to snk_is_public_private_pair is invalid: $file_containing_key_ext">&2
+    echo "ERROR: the provided argument to snk_is_public_private_pair is invalid: $file_containing_key_ext">&2
     return 1
   fi
 
@@ -211,9 +211,9 @@ usage_key() {
 }
 
 #######################################
-# Initalizes the key sub-command
+# Initializes the key sub-command
 # Arguments:
-#   $@: required(string[]) - The incomming array of arguments
+#   $@: required(string[]) - The incoming array of arguments
 # Returns:
 #   string[] - An array of strings representing the parsed options
 #######################################
@@ -226,11 +226,19 @@ getopt_key() {
 ######################
 
 #######################################
-# Initalizes the key sub-command
+# Initializes the key sub-command
 # Arguments:
-#   $1: optional(string[]) - The incomming array of arguments
-#   $2: required(string[])
-#   $3:
+#   $1: required(string[]) - The incoming array of arguments
+#   $2: required(ref:map[string]string) - The map of validated options
+#     map[string]string:
+#     [
+#       "generate":    - bool: The generate flag
+#       "keep":        - bool: The keep flag
+#       "public":      - bool: The public flag
+#     ]
+#   $3: required(ref:string) - The key to use during resigning
+#   $4: optional(bool) - The output directory
+#   $5: optional(bool) - Enable verbose output
 # Returns:
 #   None
 # NOTE:
@@ -241,11 +249,15 @@ getopt_key() {
 key() {
   # set all inputs to local args & pass-by-reference args
   declare -A t_options
-  local t_arguments
+  local t_arguments=
+  local echo_output_enabled=false
+  if [[ -z $2 && -z $3 ]]; then
+    echo_output_enabled=true
+  fi
 
   local input=($1)
   local -n options=${2:-t_options}
-  local -n arguments=${3:t_arguments}
+  local -n arguments=${3:-t_arguments}
 
   # temp helper variables
   local help=false
@@ -287,7 +299,7 @@ key() {
   local key_source_ext="${key_source_path##*.}"
   local key_source_name="${key_source%.*}"
 
-  # validate arguements
+  # validate arguments
   if [[ $# > 1 ]]; then
 		echo "ERROR: too many arguments provided to key: $key_source_path">&2
     usage_key
@@ -351,5 +363,12 @@ key() {
   options["generate"]=$generate
   options["keep"]="$keep"
   options["public"]=$public
-  arguements=$key
+  arguments=$key
+  
+  if [[ $echo_output_enabled == true ]]; then
+    for i in "${!options[@]}"; do
+      echo $i ${options[$i]}
+    done
+    echo "key $key"
+  fi
 }

@@ -39,7 +39,7 @@ usage() {
     Convert an intermediate language file into an assembly
   Options:
     -h|--help             Display this help message
-    -a|--assembly-type    The type of assembly to convert the intermedeiate language file into
+    -a|--assembly-type    The type of assembly to convert the intermediate language file into
     -k|--key-file         The key with which to sign the assembly file
     -o|--output           The output directory in which to place the assembly file
     -v|--verbose          Enable verbose logging
@@ -88,7 +88,7 @@ verify_il() {
 #		ASSEMBLY_PATH
 # 	OUTPUT
 # Arguments:
-#   $@        	 - The incomming array of inputs
+#   $@        	 - The incoming array of inputs
 # Returns:
 #   None
 #######################################

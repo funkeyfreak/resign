@@ -51,7 +51,7 @@
 # # argeuemtns
 # PATH_ARG=
 
-# # arguements: check
+# # arguments: check
 # CHECK_ARG=
 
 # # argeuments: key
@@ -83,12 +83,12 @@ get_index() {
 }
 
 #######################################
-# Name: validate_arguements
+# Name: validate_arguments
 # Description: Prepares the arguments and subcommands to resign
 # Returns:
 #   string - The input parm if valid, else undefined
 #######################################
-validate_arguements() {
+validate_arguments() {
   local path="$1"
   if [[ ( -f $path ) && ( ! -d $path ) && ("${path##*.}" != "dll" && "${path##*.}" != "exe") ]]; then
     path=
@@ -119,7 +119,7 @@ usage() {
                       NOTE: any artifacts from failed resign-attempts will be left in the directory which
                       contains the assembly which failed to resign
       -s|--save-all   Will save most of the intermediate files used during resigning. This includes dis-
-                      -assembled assemblies in their intermeidate language form and unsigned assemblies 
+                      -assembled assemblies in their intermediate language form and unsigned assemblies 
                       (<assembly-name>.orig.[dll|exe])
                       NOTE: Will NOT save the keys used in resigning. Please pass k|key -k|--keep to use
                       this scenario
@@ -166,28 +166,47 @@ verbose_log() {
   fi
 }
 
-#########################
-# script initialization #
-#########################
+resign_helper() {
+  local resign_helper_file=$1
+  local resign_helper_key=$2
+  local resign_helper_output=$3
+  local resign_helper_verbose=$4
+
+  local resign_helper_file_type="${resign_helper_file##*.}"
+  local resign_helper_intermediate_file="${resign_helper_file%.*}.il"
+
+  verbose_log $resign_helper_verbose "INFO: processing $resign_helper_file..."
+  $(assembly_to_il if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi -o $resign_helper_output $resign_helper_file)
+  if [[ $? != 0 ]]; then 
+    echo "ERROR: Failed intermediate step assembly_to_il: $resign_helper_file"
+    exit $?
+  fi
+
+  $(il_to_assembly if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi -k $resign_helper_key -a $resign_helper_file_type -o $resign_helper_output $resign_helper_intermediate_file)
+  if [[ $? != 0 ]]; then 
+    echo "ERROR: Failed intermediate step il_to_assembly: $resign_helper_file"
+    exit $?
+  fi
+  verbose_log $resign_helper_verbose "INFO: successfully processed $resign_helper_file"
+}
 
 #######################################
-# Initalizes the key sub-command
+# Initializes the key sub-command
 # Arguments:
-#   $1: required(string[]) - The incomming array of arguments
-#   $2: required(ref:map[string]string) - The results associative array passed by reference:
+#   $1: required(string[]) - The incoming array of arguments
+#   $2: optional(ref:map[string]string) - The results associative array passed by reference:
 #   map[string]string:
-#   [
-#     "cmd":        - string[]   : resign cmd options and arguements
-#     "key":        - string[]   : key cmd options and arguements
-#     "check":      - string[]   : check cmd option and arguements
-#   ]
-#   
+#     [
+#       "cmd":        - string[]   : resign cmd options and arguments
+#       "key":        - string[]   : key cmd options and arguments
+#       "check":      - string[]   : check cmd option and arguments
+#     ]
 # Returns:
 #   None
 #######################################
 init_resign() {
   if [[ $#  == 0 ]]; then
-    echo "ERROR: cannot have empty arguements">&2
+    echo "ERROR: cannot have empty arguments">&2
     return 1
   fi
 
@@ -257,7 +276,7 @@ init_resign() {
 
     # if both subcommands are set, we need to find and remove the overlap    
     if [[ $idx_cmd_check != -1 ]] && [[ $idx_cmd_key != -1 ]]; then
-      # if check has been suplied and key has not
+      # if check has been supplied and key has not
       local idx_to_remove=$(get_index ${check_cmd[@]} "key")
       if [[ $idx_to_remove == -1 ]]; then
         idx_to_remove=$(get_index ${check_cmd[@]} "k")
@@ -266,7 +285,7 @@ init_resign() {
         check_cmd=(${check_cmd[@]:0:$idx_to_remove})
       fi
       
-      # if key has been suplied and check has not
+      # if key has been supplied and check has not
       idx_to_remove=$(get_index ${key_cmd[@]} "check")
       if [[ idx_to_remove == -1 ]]; then
         idx_to_remove=$(get_index ${key_cmd[@]} "c")
@@ -282,6 +301,8 @@ init_resign() {
   res["key"]="${key_cmd[@]}"
 }
 
+#   $3: optional(ref string[]) - A list of signable files. If a directory is given, this will
+#     contain more than one entry
 init() {
   # set all inputs to local args & pass-by-reference args
   declare -A t_options
@@ -333,9 +354,9 @@ init() {
   local arr=($@) 2> /dev/null
   local arg=("${arr[-1]}")
 
-  # validate arguements  
+  # validate arguments  
   if [[ ( ! -d $arg ) || ( ( -f $arg ) && ("${arg##*.}" != "dll" || "${arg##*.}" != "exe") ) ]]; then
-    echo "ERROR: arguement $1 is not a valid assembly or a directory">&2
+    echo "ERROR: argument $1 is not a valid assembly or a directory">&2
     usage
     return 1
   fi
@@ -371,15 +392,10 @@ init() {
 }
 
 #######################################
-# Resign
-#   Resigns assemblies
-# Globals:
-#   CMD         - The base command
-#   CHECK_CMD   - The 'check' subcommand
-#   KEY_CMD     - The 'key' subcommand
-#   PATH_ARG    - The path on which to execute
+# Resigns assemblies
 # Arguments:
-#   $@          - The incomming array of inputs
+#   $1: required(string[]) - The incoming array of arguments
+#   $2: required(string) - The temporary directory to use for 
 # Returns:
 #   None
 #######################################
@@ -429,7 +445,7 @@ resign() {
   # check processes files provided to resign
   # TODO: check command
   if [[ ! -z ${parsed_input[check]} ]]; then
-    # check "${parsed_input[check]}" "${cmd_arg[@]}" check_opt check_arg ${cmd_opt[output]} ${cmd_opt[verbose]}
+    # check "${parsed_input[check]}" "${cmd_arg[@]}" check_opt check_arg $resign_tmp_dir ${cmd_opt[verbose]}
     # cmd_arg=("${check_arg[@]}")
     # verbose_log ${cmd_opt[verbose]} "INFO: check subcommand processed successfully"
     echo "check">&2
@@ -442,8 +458,12 @@ resign() {
   echo "cmd arg ${cmd_arg[@]}">&2
 
   # key handles key creation for resign
+  # TODO: if key is not provided, use the key from the first assembly given 
   if [[ ! -z ${parsed_input[key]} ]]; then
-    key "${parsed_input[key]}" key_opt key_arg ${cmd_opt[output]} ${cmd_opt[verbose]}
+    $(key ${parsed_input[key]} key_opt key_arg $resign_tmp_dir ${cmd_opt[verbose]})
+    if [[ $? != 0 ]]; then
+      exit $?
+    fi
     verbose_log ${cmd_opt[verbose]} "INFO: key subcommand processed successfully"
   elif [[ $(get_index ${all_args[@]} "key") != -1 ]]; then
     usage_key
@@ -452,138 +472,17 @@ resign() {
 
   # process all files
   for file in "${cmd_arg[@]}"; do
-    true
+    resign_helper $file $
+    exit 0
   done
-  
-
-  # local arr=($@)
-
-  # PATH_ARG=("${arr[-1]}")
-  # PATH_ARG=$(validate_arguements $PATH_ARG)
-  
-  # if [[ -z "$PATH_ARG" ]]; then
-  #   echo "ERROR: arguement $1 is not a valid assembly or a directory"
-  #   usage
-  #   exit 1
-  # fi  
-
-  # if [[ ! -z ${check_cmd[@]} ]]; then 
-  #   echo "check: ${check_cmd[@]}"
-  #   check ${check_cmd[@]}
-  #   check_arg=("${check_cmd[-1]}")
-  #   echo "check arg: $check_arg"
-  # fi
-
-  # if [[ ! -z ${key_cmd[@]} ]]; then
-  #   echo "key: ${key_cmd[@]}"
-  #   key ${key_cmd[@]}
-  #   key_arg=("${key_cmd[-1]}")
-  #   echo "check arg: $key_arg"
-  # fi
-
-  
-
-  # echo "base: ${CMD[@]}"
-  # echo "path: ${PATH_ARG}"
-
-  # #init_resign "${CMD}"
-
-  # if [[ ! -z ${CHECK_CMD[@]} ]]; then 
-  #   echo "check: ${CHECK_CMD[@]}"
-  #   check ${CHECK_CMD[@]}
-  #   CHECK_ARG=("${CHECK_CMD[-1]}")
-  #   echo "check arg: $CHECK_ARG"
-  # fi
-
-  # if [[ ! -z ${KEY_CMD[@]} ]]; then
-  #   echo "key: ${KEY_CMD[@]}"
-  #   key ${KEY_CMD[@]}
-  #   KEY_ARG=("${KEY_CMD[-1]}")
-  #   echo "check arg: $KEY_ARG"
-  # fi
-
-  # echo "HELP: $HELP"
-  # echo "BACKUP: $BACKUP"
-  # echo "DRY_RUN: $DRY_RUN"
-  # echo "SAVE_KEY: $SAVE_KEY"
-  # echo "VERBOSE: $VERBOSE"
-
-  # # options: check
-  # echo "DELAY: $DELAY"
-  # echo "NATIVE: $NATIVE"
-  # echo "REMOVE: $REMOVE"
-  # echo "SIGNED: $SIGNED"
-
-  # # options: key
-  # echo "EXTRACT: $EXTRACT"
 }
 
-# usage_check() {
-#   case "$1" in
-#   -h | --help ) printf '
-#     Usage: check [options] <pattern>
-
-#       Only sign the assembly(s) if they pass a binary condition
-    
-#     Options:
-#       -h|--help         Display this help message
-#       -d|--delay        Sign the assemblies which are delay signed
-#       -n|--native       Check for native assemblies - if paired with -r|--remove will remove these binaries
-#       -r|--remove       Remove assemblies which match this check
-#       -s|--signed       Sign the assemblies which are signed
-    
-#     pattern:
-#       A regex pattern
-#     \n'
-#     exit 0
-#     ;;
-#   * ) printf '
-#     Usage: check [options] <pattern>
-
-#       Only sign the assembly(s) if they pass a binary condition
-
-#     Options:
-#       -h|--help       Display help message
-#     \n'
-#     exit 1
-#     ;;
-#   esac
-# }
-
-# usage_key() {
-#   case "$1" in
-#   -h | --help ) printf '
-#     k|key [options] <path-to-key-source>
-    
-#       Provide resign a key with which to resign the given assembly(s)
-
-#     Options:
-#       -h|--help         Display this help message
-#       -e|--extract      Instead of .snk, extracts the public snk from a given assembly
-#                         - replace path-to-key-source with a signed assembly
-#                         NOTE: Will only apply the public key, resulting in a delay-signed only assembly
-    
-#     path-to-key-source:
-#       The .snk or .dll to sign with
-#     \n'
-#     exit 0
-#     ;;
-#   * ) printf '
-#     k|key [options] <path-to-key-source>
-    
-#       Provide resign a key with which to resign the given assembly(s)
-
-#     Options:
-#       -h|--help         Display help message
-#     \n'
-#     exit 1
-#     ;;
-#   esac
-# }
-
+######################
+# Exported Functions #
+######################
 
 main() {
-  # create a temporary directory - will handle cleanup if script crashes or
+  # Create a temporary directory - will handle cleanup if script crashes or
   # if resign is forcefully closed
   local resign_tmp_dir=$(mktemp -d -t 'resign.XXXXXXXXXX' 2> /dev/null || mktemp -d -t 'resign.XXXXXXXXXX')
   if [[ $? != 0 ]]; then

@@ -11,7 +11,7 @@
 # Name: verbose_log
 # Description: Log verbosely
 # Arguments:
-#   ${@:2}: Array - The incomming text to log
+#   ${@:2}: Array - The incoming text to log
 # Returns:
 #   None
 #######################################

@@ -160,11 +160,8 @@ usage() {
 #######################################
 # Name: assembly_to_il
 # Description: Converts a given assembly into intermediate language
-# Globals:
-#	ASSEMBLY_PATH
-# 	OUTPUT
 # Arguments:
-#   $@        	 - The incomming array of inputs
+#   $@        	 - The incoming array of inputs
 # Returns:
 #   None
 #######################################
@@ -200,7 +197,7 @@ assembly_to_il() {
   local assembly_name="${assembly%.*}"
   local assembly_path="$@"
 
-  # validate arguement
+  # validate argument
 	if [[ $# > 1 ]]; then
 		echo "ERROR: too many arguments provided to assembly_to_il: $@">&2
 		exit 1
