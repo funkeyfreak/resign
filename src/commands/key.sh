@@ -361,7 +361,7 @@ key() {
   fi
 
   options["generate"]=$generate
-  options["keep"]="$keep"
+  options["keep"]=$keep
   options["public"]=$public
   arguments=$key
   

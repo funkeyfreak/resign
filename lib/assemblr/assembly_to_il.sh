@@ -115,7 +115,6 @@ save_metadata() {
     verbose_log $verbose "WARNING: $old_csv already exists, creating $csv"
     touch "$csv"
 	fi
-  echo "$requested_metadata"
 	echo "$requested_metadata" > $csv
 
 	for i in "${commands[@]}"
@@ -148,7 +147,7 @@ usage() {
 
   path-to-assembly-file:
     The path to the assembly file to convert into an intermediate language file  
-  \n'
+  \n'>&2
 	#echo "available metadata options: assembly-table,assembly-ref,module-ref,exported,custom-attributes"
 	exit 0
 }
@@ -259,5 +258,7 @@ assembly_to_il() {
         echo "ERROR: Unhandled assembly extension $assembly_ext encountered">&2
         exit 1
       ;;
-  esac 
+  esac
+
+  return $?
 }

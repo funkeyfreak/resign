@@ -166,6 +166,7 @@ verbose_log() {
   fi
 }
 
+# Enables multi-threading for resign
 resign_helper() {
   local resign_helper_file=$1
   local resign_helper_key=$2
@@ -174,18 +175,38 @@ resign_helper() {
 
   local resign_helper_file_type="${resign_helper_file##*.}"
   local resign_helper_intermediate_file="${resign_helper_file%.*}.il"
+  local resign_error_code=
+  local resign_helper_tmp_dir="$resign_helper_output/$(uuidgen)"
+  mkdir -p $resign_helper_tmp_dir
+
+  copy_file_to_resign_helper_output() {
+    cp -r --backup=t "$resign_helper_tmp_dir/*.$1" "$resign_helper_output"
+  }
+
+  local_file_cleanup_resign_helper() {
+    rm -rf "$resign_helper_tmp_dir"
+  }
+
+  cleanup_resign_helper() {
+    copy_file_to_resign_helper_output "il"
+    copy_file_to_resign_helper_output "dll"
+    copy_file_to_resign_helper_output "exe"
+    local_file_cleanup_resign_helper
+  }
 
   verbose_log $resign_helper_verbose "INFO: processing $resign_helper_file..."
-  $(assembly_to_il if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi -o $resign_helper_output $resign_helper_file)
-  if [[ $? != 0 ]]; then 
-    echo "ERROR: Failed intermediate step assembly_to_il: $resign_helper_file"
-    exit $?
+  assembly_to_il $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -o $resign_helper_output $resign_helper_file
+  resign_error_code=$?
+  if [[ $resign_error_code != 0 ]]; then
+    echo "ERROR: Failed intermediate step assembly_to_il with code $resign_error_code: $resign_helper_file"
+    return $resign_error_code
   fi
 
-  $(il_to_assembly if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi -k $resign_helper_key -a $resign_helper_file_type -o $resign_helper_output $resign_helper_intermediate_file)
-  if [[ $? != 0 ]]; then 
-    echo "ERROR: Failed intermediate step il_to_assembly: $resign_helper_file"
-    exit $?
+  il_to_assembly $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -k $resign_helper_key -a $resign_helper_file_type -o $resign_helper_output $resign_helper_intermediate_file
+  resign_error_code=$?
+  if [[ $resign_error_code != 0 ]]; then
+    echo "ERROR: Failed intermediate step il_to_assembly with code $resign_error_code: $resign_helper_file"
+    return $resign_error_code
   fi
   verbose_log $resign_helper_verbose "INFO: successfully processed $resign_helper_file"
 }
@@ -213,11 +234,12 @@ init_resign() {
   local input=($1)
   local -n res=$2
   local cmd_arg="${input[-1]}"
+  
   if [[ $(get_index "$cmd_arg" "c") != -1 || $(get_index "$cmd_arg" "check") != -1 || 
         $(get_index "$cmd_arg" "k") != -1 || $(get_index "$cmd_arg" "key") != -1 ]]; then
     echo "ERROR: poorly formed command: $cmd_arg">&2
     return 1
-  elif [[ ( ! -d $cmd_arg ) || ( -f $cmd_arg && ( "${cmd_arg##*.}" != "dll" || "${cmd_arg##*.}" != "exe" ) ) ]]; then
+  elif [[ ( ! -d $cmd_arg ) && ! ( ( -f $cmd_arg ) && ("${cmd_arg##*.}" == "dll" || "${cmd_arg##*.}" == "exe") ) ]]; then
     echo "ERROR: invalid argument: $cmd_arg">&2
     return 1
   fi
@@ -355,7 +377,13 @@ init() {
   local arg=("${arr[-1]}")
 
   # validate arguments  
-  if [[ ( ! -d $arg ) || ( ( -f $arg ) && ("${arg##*.}" != "dll" || "${arg##*.}" != "exe") ) ]]; then
+  # is a file, not accepted, and is not a directory
+  #[t && (t && (f && f))] => f
+  # is not a  file, is a directory
+  #[t]
+  # is not a file, is not a directory
+  # is a file, is accepted, is not a directory
+  if [[ ( ! -d $arg ) && ! ( ( -f $arg ) && ("${arg##*.}" == "dll" || "${arg##*.}" == "exe") ) ]]; then
     echo "ERROR: argument $1 is not a valid assembly or a directory">&2
     usage
     return 1
@@ -460,7 +488,7 @@ resign() {
   # key handles key creation for resign
   # TODO: if key is not provided, use the key from the first assembly given 
   if [[ ! -z ${parsed_input[key]} ]]; then
-    $(key ${parsed_input[key]} key_opt key_arg $resign_tmp_dir ${cmd_opt[verbose]})
+    key ${parsed_input[key]} key_opt key_arg $resign_tmp_dir ${cmd_opt[verbose]}
     if [[ $? != 0 ]]; then
       exit $?
     fi
@@ -469,13 +497,22 @@ resign() {
     usage_key
     exit 1
   fi
-
   # process all files
+
+  multi_process() {
+    local file=$1
+    resign_helper $file $key_arg ${cmd_opt[output]} ${cmd_opt[verbose]}
+    local error_code=$?
+    if [[ $error_code != 0  && ${cmd_opt[robust]} != true ]]; then
+      echo "ERROR: failed to resign, aborting: $file" >&2
+      exit $error_code
+    fi
+  }
+
   for file in "${cmd_arg[@]}"; do
-    # NOTE TMP OUTPUT 
-    resign_helper $file $key_arg ${cmd_opt[output]} true # ${cmd_opt[verbose]}
-    exit 0
+    multi_process $file &
   done
+  wait
 }
 
 ######################
@@ -498,6 +535,7 @@ main() {
   norm_exit() {
     local exit_code=$?
     rm -rf "$resign_tmp_dir"
+    echo "exiting... ">&2
     exit $exit_code
   }
 

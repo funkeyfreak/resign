@@ -69,10 +69,10 @@ verify_il() {
   # typically, any file containing .permissionset .. = {..} will be impossible to decompile
   results=$(pcregrep -M '\.permissionset[\S+\n\r\s]*?\b(?:reqmin)\b[\S+\n\r\s]*?=[\S+\n\r\s]*?\{[^{}]*+(\{(?:[^{}]|(?1))*+\}[^{}]*+)++\}' $il_file)
   if [[ -z $results ]]; then
-    verbose_log $verbose "INFO: $il_file is valid"
+    verbose_log $verbose "INFO: $il_file is valid">&2
     return 0
   else
-    verbose_log $verbose "WARNING: $il_file is invalid: $results"
+    verbose_log $verbose "WARNING: $il_file is invalid: $results">&2
     return 1
   fi 
 }
@@ -150,7 +150,7 @@ il_to_assembly() {
   if [[ -z $output ]]; then
     output=$(dirname "${il_path}")
   elif [[ ! -d $output ]]; then
-    echo "ERROR: output is not a directory: $output"
+    echo "ERROR: output is not a directory: $output">&2
     exit 1
 	fi
 
@@ -163,8 +163,10 @@ il_to_assembly() {
   verbose_log $verbose "INFO: creating $il_name.$assembly_type in $output"
 
   if [[ ! -z $key_file ]]; then
-    ilasm -$assembly_type -key="$key_file" -output="$output/$il_name.$assembly_type" "$il_path"
+    ilasm $( if [[ $verbose != true ]]; then echo "-q"; fi ) -$assembly_type -key="$key_file" -output="$output/$il_name.$assembly_type" "$il_path"
   else
-    ilasm -$assembly_type -output="$output/$il_name.$assembly_type" "$il_path"
+    ilasm $( if [[ $verbose != true ]]; then echo "-q"; fi ) -$assembly_type -output="$output/$il_name.$assembly_type" "$il_path"
   fi
+  
+  return $?
 }
