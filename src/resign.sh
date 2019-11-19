@@ -75,7 +75,10 @@ usage() {
 
     Options:
       -h|--help       Display this help message
-      -b|--backup     Backup the folder before processing - will be named <path-to-assembly(s)>.backup.zip
+      -b|--backup     Backup the folder before processing - will be named <outputrm >.backup.zip
+                      ALTERNATIVES:
+                        * backup-o: All existing assemblies will be renamed to <assemblies>.orig.<assembly-ext>
+                        * backup-n: All existing assemblies will be renamed to <assemblies>.~.<incremental-counter>.<assembly-ext>
       -d|--dry-run    Dry-run - prints the assemblies which will be signed
       -k|--keep       Will keep most of the intermediate files used during resigning. This includes dis-
                       -assembled assemblies in their intermediate language form and unsigned assemblies 
@@ -356,12 +359,6 @@ init() {
   local files=
 
   # validate arguments  
-  # is a file, not accepted, and is not a directory
-  #[t && (t && (f && f))] => f
-  # is not a  file, is a directory
-  #[t]
-  # is not a file, is not a directory
-  # is a file, is accepted, is not a directory
   if [[ ( ! -d $arg ) && ! ( ( -f $arg ) && ("${arg##*.}" == "dll" || "${arg##*.}" == "exe") ) ]]; then
     echo "ERROR: argument $1 is not a valid assembly or a directory">&2
     usage
@@ -385,7 +382,11 @@ init() {
     return 1
 	elif [[ -z $output ]]; then
     echo "WARNING: operation will overwrite your file(s) with the resign binaries, please initiate a SIGTERM if this is not the desired operation"
-    output="$(dirname $arg)"    
+    if [[ -d $arg ]]; then
+      output="$arg"
+    else
+      output="$(dirname $arg)"    
+    fi
   fi
 
   if [[ $backup == true && $dry_run == true ]]; then
@@ -500,6 +501,31 @@ resign() {
     exit 1
   fi
 
+  # backup
+  if [[ ${cmd_opt[backup]} == true ]]; then
+    zip $( if [[ $resign_helper_verbose != true ]]; then -qq; fi ) -r backup ../bond.net.3.6.0/ -i "*.exe" "*.dll"
+  elif [[ "${cmd_opt[backup]}" == "-l" ]]; then
+    echo "--backup=numbered"
+  elif [[ "${cmd_opt[backup]}" == "-n" ]]; then
+
+  fi
+
+  # cleanup the resign process
+  resign_cleanup() {
+    # if keep is false, delete all intermediate files before copying the tmp dir to output
+    if [[ ${cmd_opt[keep]} == false ]]; then
+      find "$resign_tmp_dir/" -type f ! -name "*.dll" -a ! -name "*.exe" -a ! -path "$resign_tmp_dir/key/*" -delete
+    fi
+
+    # handle the key directory
+    if [[ ${key_opt[keep]} == true ]]; then
+      cp $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -a -r $resign_tmp_dir/key/* "$resign_tmp_dir"    
+    fi
+    rm $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -rf "$resign_tmp_dir/key"
+    
+    cp -a $( if [[ $verbose == true ]]; then echo "-v"; fi ) -r $resign_tmp_dir/* "${cmd_opt[output]}/"
+  }
+
   # process all files
   multi_process() {
     local file=$1
@@ -511,6 +537,7 @@ resign() {
       if [[ ${cmd_opt[robust]} != true ]]; then 
         echo "ERROR: failed to resign, aborting: $file" >&2
         parallel rm $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) ::: "${cmd_arg[@]}"
+        resign_cleanup
       else
         rm $file
         cmd_arg=( "${cmd_arg[@]:1}" )
@@ -518,25 +545,14 @@ resign() {
     else
       cmd_arg=( "${cmd_arg[@]:1}" )
     fi
-  }
+  }  
 
   local parallel_exit_code=
   for file in "${cmd_arg[@]}"; do
     multi_process $file
   done
 
-  # if keep is false, delete all intermediate files before copying the tmp dir to output
-  if [[ ${cmd_opt[keep]} == false ]]; then
-    find "$resign_tmp_dir/" -type f ! -name "*.dll" -a ! -name "*.exe" -a ! -path "$resign_tmp_dir/key/*" -delete
-  fi
-
-  # handle the key directory
-  if [[ ${key_opt[keep]} == true ]]; then
-    cp $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -a -r $resign_tmp_dir/key/* "$resign_tmp_dir"    
-  fi
-  rm $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -rf "$resign_tmp_dir/key"
-  
-  cp -a $( if [[ $verbose == true ]]; then echo "-v"; fi ) -r $resign_tmp_dir/* "${cmd_opt[output]}/"
+  resign_cleanup
 }
 
 ######################
