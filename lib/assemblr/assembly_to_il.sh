@@ -148,7 +148,6 @@ usage() {
   path-to-assembly-file:
     The path to the assembly file to convert into an intermediate language file  
   \n'>&2
-	#echo "available metadata options: assembly-table,assembly-ref,module-ref,exported,custom-attributes"
 	exit 0
 }
 
@@ -171,7 +170,7 @@ assembly_to_il() {
   local verbose=
 
 	local opts=`getopt -o hm:o:v --long help,metadata:,output:,verbose -n 'assembly_to_il' -- "$@"`
-	if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+	if [ $? != 0 ] ; then echo "ERROR: failed parsing options" >&2 ; exit 1 ; fi
 
 	eval set -- "$opts"
 
@@ -212,7 +211,7 @@ assembly_to_il() {
     echo "ERROR: output is not a directory: $output">&2
     exit 1
 	fi
-	
+
 	if [[ ! -z "${metadata}" ]]; then
 		save_metadata "$metadata"  "$assembly_path" "$output" $verbose
 	fi	
@@ -241,17 +240,25 @@ assembly_to_il() {
     dll )
         if [[ $os_name == "MSYS_NT-10.0" ]]; then      
           sudo $wsl_linux run "ikdasm $assembly_path ^> $output/$assembly_name.il"
-        else
-          ikdasm "$assembly_path" > "$output/$assembly_name.il"
+        else          
+          (
+            ikdasm "$assembly_path" > "$output/$assembly_name.il"
+            cd "$output"
+            monodis --mresources "$assembly_path"
+          )
         fi
       ;;
     exe )
         # TODO: iklasm could be ran after to produce a second-il - look into this, as the .il created by
         #   ikdasm and monodis are both different
         if [[ $os_name == "MSYS_NT-10.0" ]]; then      
-          sudo $wsl_linux run "monodis $assembly_path --output=$output/$assembly_name.il"
+          sudo $wsl_linux run "( cd $output; monodis $assembly_path --output=$output/$assembly_name.il )"
         else
-          monodis "$assembly_path" --output="$output/$assembly_name.il"
+          (
+            ikdasm "$assembly_path" > "$output/$assembly_name.il"
+            cd "$output"
+            monodis --mresources "$assembly_path"
+          )
         fi
       ;;
     * )

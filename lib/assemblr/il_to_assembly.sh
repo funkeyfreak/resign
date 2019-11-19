@@ -100,7 +100,7 @@ il_to_assembly() {
 	local verbose=false
 
 	local opts=`getopt -o ha:o:k:v --long help,assembly_type:,output:,key_file:,verbose -n 'il_to_assembly' -- "$@"`
-	if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+	if [ $? != 0 ] ; then echo "ERROR: failed parsing options" >&2 ; exit 1 ; fi
 
 	eval set -- "$opts"
 
@@ -163,9 +163,15 @@ il_to_assembly() {
   verbose_log $verbose "INFO: creating $il_name.$assembly_type in $output"
 
   if [[ ! -z $key_file ]]; then
-    ilasm $( if [[ $verbose != true ]]; then echo "-q"; fi ) -$assembly_type -key="$key_file" -output="$output/$il_name.$assembly_type" "$il_path"
+    (
+      cd "$output"
+      ilasm $( if [[ $verbose != true ]]; then echo "-q"; fi ) -$assembly_type -key="$key_file" -output="$output/$il_name.$assembly_type" "$il_path"
+    )
   else
-    ilasm $( if [[ $verbose != true ]]; then echo "-q"; fi ) -$assembly_type -output="$output/$il_name.$assembly_type" "$il_path"
+    (
+      cd "$output"
+      ilasm $( if [[ $verbose != true ]]; then echo "-q"; fi ) -$assembly_type -output="$output/$il_name.$assembly_type" "$il_path"
+    )
   fi
   
   return $?

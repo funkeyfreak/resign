@@ -39,7 +39,7 @@ usage_check() {
 check() {
   OPTS=`getopt -o hdnrs --long help,delay,native,remove,signed -n 'check' -- "$@"`
 
-  if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+  if [ $? != 0 ] ; then echo "ERROR: failed parsing options" >&2 ; exit 1 ; fi
 
   eval set -- "$OPTS"
 

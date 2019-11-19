@@ -14,48 +14,11 @@
 . $( dirname "${BASH_SOURCE[0]}" )/../lib/assemblr/assemblr.sh
 . $( dirname "${BASH_SOURCE[0]}" )/commands/key.sh
 . $( dirname "${BASH_SOURCE[0]}" )/commands/check.sh
+# . `which env_parallel.bash`
+
 
 # TODO: move to global-scoped script AND use uname to determine if on windows
 [ -x "$(uuidgen -h 2> /dev/null)" ] || alias uuidgen='powershell -command "[guid]::newguid().Guid"|xargs'
-
-###########
-# GLOBALS #
-###########
-#SCRIPT_FOLDER="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-# The name of this script is its containing folder
-#SCRIPT_NAME="$(basename $SCRIPT_FOLDER)"
-
-# cmd context
-# INPUT=($@)
-# NUM_ARGS=$#
-# CMD=
-# CHECK_CMD=
-# KEY_CMD=
-
-# # options
-# HELP=false
-# BACKUP=false
-# DRY_RUN=false
-# SAVE_KEY=fakse
-# VERBOSE=false
-
-# # options: check
-# DELAY=false
-# NATIVE=false
-# REMOVE=false
-# SIGNED=false
-
-# # options: key
-# EXTRACT=false
-
-# # argeuemtns
-# PATH_ARG=
-
-# # arguments: check
-# CHECK_ARG=
-
-# # argeuments: key
-# KEY_ARG=
 
 ####################
 # HELPER FUNCTIONS #
@@ -114,15 +77,17 @@ usage() {
       -h|--help       Display this help message
       -b|--backup     Backup the folder before processing - will be named <path-to-assembly(s)>.backup.zip
       -d|--dry-run    Dry-run - prints the assemblies which will be signed
-      -o|--output     The folder in which to place the output. Defaults to `.`
-      -r|--robust     When given a folder, this will prompt our tool to not fail on a single file
-                      NOTE: any artifacts from failed resign-attempts will be left in the directory which
-                      contains the assembly which failed to resign
-      -s|--save-all   Will save most of the intermediate files used during resigning. This includes dis-
+      -k|--keep       Will keep most of the intermediate files used during resigning. This includes dis-
                       -assembled assemblies in their intermediate language form and unsigned assemblies 
                       (<assembly-name>.orig.[dll|exe])
                       NOTE: Will NOT save the keys used in resigning. Please pass k|key -k|--keep to use
                       this scenario
+                      NOTE: If paired with -r|--robust, will keep the intermediate files of the items which
+                      failed to resign
+      -o|--output     The folder in which to place the output. Defaults to `.`
+      -r|--robust     When given a folder, this will prompt our tool to not fail on a single file
+                      NOTE: any artifacts from failed resign-attempts will be left in the directory which
+                      contains the assembly which failed to resign
       -v|--verbose    Enables verbose output
           
     Command(s):
@@ -162,7 +127,7 @@ usage() {
 # TODO: Remove all "echo" logging statements - handle in this function & check 'level', e.g. ERROR, WARNING, etc.
 verbose_log() {
   if [[ $1 == true ]]; then
-    echo "${@:2}" 
+    echo "${@:2}">&2
   fi
 }
 
@@ -206,6 +171,7 @@ resign_helper() {
   resign_error_code=$?
   if [[ $resign_error_code != 0 ]]; then
     echo "ERROR: Failed intermediate step assembly_to_il with code $resign_error_code: $resign_helper_file"
+    local_file_cleanup_resign_helper
     return $resign_error_code
   fi
 
@@ -216,9 +182,10 @@ resign_helper() {
     copy_file_to_resign_helper_output "il"
     local_file_cleanup_resign_helper
     return $resign_error_code
-  fi
+  fi  
 
   cleanup_resign_helper
+
   verbose_log $resign_helper_verbose "INFO: successfully processed $resign_helper_file_name"
 }
 
@@ -351,12 +318,12 @@ init() {
   local dry_run=false
   local output=
   local robust=false
-  local save_all=false
+  local keep=false
   local verbose=false
 
   local opts=
 
-  if ! opts=$(getopt -o hb::do:rsv --long help,backup::,dry-run,output:,robust,save-all,verbose -n 'resign' -- "${input[@]}"); then 
+  if ! opts=$(getopt -o hb::dko:rv --long help,backup::,dry-run,keep,output:,robust,verbose -n 'resign' -- "${input[@]}"); then 
     echo "ERROR: failed while parsing resigns options: ${input[@]}" >&2
     usage
     return 1
@@ -370,9 +337,9 @@ init() {
       -h | --help ) help=true; shift ;;
       -b | --backup ) backup=${2:-true}; shift ;;
       -d | --dry-run ) dry_run=true; shift ;;
+      -k | --keep ) keep=true; shift ;;
       -o | --output ) output="$2"; shift 2 ;;
       -r | --robust ) robust=true; shift ;;
-      -s | --save-all ) save_all=true; shift ;;
       -v | --verbose ) verbose=true; shift ;;
       -- ) shift; break ;;
       * ) break ;;
@@ -431,7 +398,7 @@ init() {
   options["dry_run"]=$dry_run
   options["output"]=$output
   options["robust"]=$robust
-  options["save_all"]=$save_all
+  options["keep"]=$keep
   options["verbose"]=$verbose
   options["input"]=$arg
   arguments=("${files[@]}")
@@ -495,13 +462,15 @@ resign() {
   else
     cp $( if [[ ${cmd_opt[verbose]} == true ]]; then echo "-v"; fi ) ${cmd_opt[input]} $resign_tmp_dir
     cmd_arg=( "$resign_tmp_dir/$(basename ${cmd_opt[input]})" )
-  fi 
+  fi
+
   # key handles key creation for resign
   # TODO: if key is not provided, use the key from the first assembly given 
   if [[ ! -z ${parsed_input[key]} ]]; then
     key ${parsed_input[key]} key_opt key_arg $resign_tmp_dir ${cmd_opt[verbose]}
-    if [[ $? != 0 ]]; then
-      exit $?
+    local exit_code=$?
+    if [[ $exit_code != 0 ]]; then
+      exit $exit_code
     fi
     verbose_log ${cmd_opt[verbose]} "INFO: key subcommand processed successfully"
   elif [[ $(get_index ${all_args[@]} "key") != -1 ]]; then
@@ -531,48 +500,43 @@ resign() {
     exit 1
   fi
 
-  # TODO: delete
-  echo "cmd opt ${cmd_opt[@]}">&2
-  echo "cmd arg ${cmd_arg[@]}">&2
-  echo "lss">&2
-  ls $resign_tmp_dir >&2
-
-  # copy input files into the tmp directory for processing
-  #if [[ -d ${cmd_opt[input]} ]]; then
-  #  verbose_log ${cmd_opt[verbose]} "INFO: copying all ${#cmd_arg[@]} assemblies into script working space..."
-    #find . -type f -name "*.dll" -printf "%h\n" | sort -u > "$resign_tmp_dir/tmp-dir-map.txt"
-    #xargs mkdir -p < "$resign_tmp_dir/tmp-dir-map.txt"
-    #cp --parents $cmd_input
-    #rsync -am --include "*/" --include "*.dll" --include "*.exe" --exclude "*" ${cmd_opt[input]} $resign_tmp_dir #${cmd_opt[output]}
-    #printf "%s\n" "${cmd_arg[@]}" | xargs -i cp $( if [[ $verbose != true ]]; then echo "-v"; fi ) --parents "{}" "$resign_tmp_dir"
-    #ls -R $resign_tmp_dir &
-    #echo "==> ${cmd_opt[input]}"    
-    #wait
-  #fi
-
   # process all files
   multi_process() {
     local file=$1
+    local dir_name=$(dirname $file)
+    dir_name=${dir_name%/}
     resign_helper $file $key_arg $(dirname $file) ${cmd_opt[verbose]}
     local error_code=$?
-    if [[ $error_code != 0 && ${cmd_opt[robust]} != true ]]; then
-      echo "ERROR: failed to resign, aborting: $file" >&2
-      exit $error_code
+    if [[ $error_code != 0 ]]; then
+      if [[ ${cmd_opt[robust]} != true ]]; then 
+        echo "ERROR: failed to resign, aborting: $file" >&2
+        parallel rm $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) ::: "${cmd_arg[@]}"
+      else
+        rm $file
+        cmd_arg=( "${cmd_arg[@]:1}" )
+      fi
+    else
+      cmd_arg=( "${cmd_arg[@]:1}" )
     fi
   }
 
+  local parallel_exit_code=
   for file in "${cmd_arg[@]}"; do
-    multi_process $file &
-    break
+    multi_process $file
   done
-  wait
 
-  # if save-all is false, delete all intermediate files before copying the tmp dir to output
-  if [[ ${cmd_opt[save_all]} == false ]]; then
-    find "$resign_tmp_dir/" -type f ! -name "*.dll" -a ! -name "*.exe" -delete
+  # if keep is false, delete all intermediate files before copying the tmp dir to output
+  if [[ ${cmd_opt[keep]} == false ]]; then
+    find "$resign_tmp_dir/" -type f ! -name "*.dll" -a ! -name "*.exe" -a ! -path "$resign_tmp_dir/key/*" -delete
   fi
-  echo $resign_tmp_dir
-  #cp $( if [[ $verbose == true ]]; then echo "-v"; fi ) -r "$resign_tmp_dir/" "${cmd_opt[output]}/"
+
+  # handle the key directory
+  if [[ ${key_opt[keep]} == true ]]; then
+    cp $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -a -r $resign_tmp_dir/key/* "$resign_tmp_dir"    
+  fi
+  rm $( if [[ $resign_helper_verbose == true ]]; then echo "-v"; fi ) -rf "$resign_tmp_dir/key"
+  
+  cp -a $( if [[ $verbose == true ]]; then echo "-v"; fi ) -r $resign_tmp_dir/* "${cmd_opt[output]}/"
 }
 
 ######################
@@ -594,7 +558,6 @@ main() {
 
   norm_exit() {
     local exit_code=$?
-    # rm -rf "$resign_tmp_dir"
     exit $exit_code
   }
 
@@ -618,15 +581,3 @@ main() {
 }
 
 main $@
-
-#testvar=$(find $(readlink -f ./../bond.rpc.net.3.0.9-preview/) -type f -name "*.dll" -o -name "*.exe")
-#testvar=$(find ./../bond.rpc.net.3.0.9-preview/ -type f -name "*.dll" -o -name "*.exe")
-#printf "%s\n" "${testvar[@]}"
-#printf "%s\n" "${testvar[@]}">./assemblies.txt
-#mkdir -p ./lol
-#rsync -amv --files-from=assemblies.txt --include "*/" --include "*.dll" --include "*.exe" --exclude "*" ../  ./lol
-
-#mkdir -p ./lol/test 
-#printf "%s\n" "${testvar[@]}" | xargs -i cp --parents "{}" ./lol
-
-#rsync -am --include "*/" --include "*.dll" --include "*.exe" --exclude "*" . ./lol

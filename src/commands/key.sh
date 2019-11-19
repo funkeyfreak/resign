@@ -270,7 +270,7 @@ key() {
   local opts=
 
   if ! opts=$(getopt_key "${input[@]}"); then  #$(getopt -o hgko:pv -l help,generate,keep,output:,public,verbose -n 'key' -- "${input[@]}"); then 
-    echo "failed parsing options: ${input[@]}" >&2; usage_key; return 1;
+    echo "ERROR: failed parsing options: ${input[@]}" >&2; usage_key; return 1;
   fi
 
   eval set -- "$opts"

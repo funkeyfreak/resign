@@ -18,7 +18,7 @@
 #TODO: Check if $@ is a string
 verbose_log() {
   if [[ $1 == true ]]; then
-    echo "${@:2}" 
+    echo "${@:2}">&2
   fi
 }
 
